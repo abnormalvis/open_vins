@@ -114,6 +114,9 @@ public:
   /// Callback for synchronized stereo camera information
   void callback_stereo(const sensor_msgs::ImageConstPtr &msg0, const sensor_msgs::ImageConstPtr &msg1, int cam_id0, int cam_id1);
 
+  /// Callback for an asynchronous dynamic-object mask image
+  void callback_dynamic_mask(const sensor_msgs::ImageConstPtr &msg, int cam_id);
+
 protected:
   /// Publish the current state
   void publish_state();
@@ -129,6 +132,9 @@ protected:
 
   /// Publish loop-closure information of current pose and active track information
   void publish_loopclosure_information();
+
+  /// Get the latest valid dynamic mask for a camera and image timestamp.
+  cv::Mat get_dynamic_mask(int cam_id, double image_timestamp, int rows, int cols);
 
   /// Global node handler
   std::shared_ptr<ros::NodeHandle> _nh;
@@ -149,9 +155,18 @@ protected:
   // Our subscribers and camera synchronizers
   ros::Subscriber sub_imu;
   std::vector<ros::Subscriber> subs_cam;
+  std::vector<ros::Subscriber> subs_dynamic_masks;
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> sync_pol;
   std::vector<std::shared_ptr<message_filters::Synchronizer<sync_pol>>> sync_cam;
   std::vector<std::shared_ptr<message_filters::Subscriber<sensor_msgs::Image>>> sync_subs_cam;
+
+  // Latest detector output for each camera. The detector runs asynchronously to VIO.
+  bool use_dynamic_mask = false;
+  double dynamic_mask_timeout = 0.25;
+  double dynamic_mask_future_tolerance = 0.05;
+  std::map<int, cv::Mat> dynamic_masks;
+  std::map<int, double> dynamic_mask_timestamps;
+  std::mutex dynamic_mask_mtx;
 
   // For path viz
   unsigned int poses_seq_imu = 0;

@@ -21,6 +21,8 @@
 
 #include "ROS1Visualizer.h"
 
+#include <algorithm>
+
 #include "core/VioManager.h"
 #include "ros/ROSVisualizerHelper.h"
 #include "sim/Simulator.h"
@@ -159,6 +161,25 @@ void ROS1Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
   parser->parse_external("relative_config_imu", "imu0", "rostopic", topic_imu);
   sub_imu = _nh->subscribe(topic_imu, 1000, &ROS1Visualizer::callback_inertial, this);
   PRINT_INFO("subscribing to IMU: %s\n", topic_imu.c_str());
+
+  parser->parse_config("use_dynamic_mask", use_dynamic_mask);
+  parser->parse_config("dynamic_mask_timeout", dynamic_mask_timeout);
+  parser->parse_config("dynamic_mask_future_tolerance", dynamic_mask_future_tolerance);
+  dynamic_mask_timeout = std::max(0.0, dynamic_mask_timeout);
+  dynamic_mask_future_tolerance = std::max(0.0, dynamic_mask_future_tolerance);
+  if (use_dynamic_mask) {
+    for (int i = 0; i < _app->get_params().state_options.num_cameras; i++) {
+      std::string mask_topic;
+      parser->parse_config("dynamic_mask_topic" + std::to_string(i), mask_topic);
+      if (mask_topic.empty()) {
+        PRINT_ERROR("dynamic masks enabled but dynamic_mask_topic%d is empty; disabling camera mask subscription\n", i);
+        continue;
+      }
+      subs_dynamic_masks.push_back(_nh->subscribe<sensor_msgs::Image>(
+          mask_topic, 2, boost::bind(&ROS1Visualizer::callback_dynamic_mask, this, _1, i)));
+      PRINT_INFO("subscribing to dynamic mask cam%d: %s\n", i, mask_topic.c_str());
+    }
+  }
 
   // Logic for sync stereo subscriber
   // https://answers.ros.org/question/96346/subscribe-to-two-image_raws-with-one-function/?answer=96491#post-id-96491
@@ -522,11 +543,11 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
 
   // Load the mask if we are using it, else it is empty
   // TODO: in the future we should get this from external pixel segmentation
-  if (_app->get_params().use_mask) {
-    message.masks.push_back(_app->get_params().masks.at(cam_id0));
-  } else {
-    message.masks.push_back(cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC1));
-  }
+  cv::Mat mask = cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC1);
+  if (_app->get_params().use_mask)
+    cv::bitwise_or(mask, _app->get_params().masks.at(cam_id0), mask);
+  cv::bitwise_or(mask, get_dynamic_mask(cam_id0, message.timestamp, cv_ptr->image.rows, cv_ptr->image.cols), mask);
+  message.masks.push_back(mask);
 
   // append it to our queue of images
   std::lock_guard<std::mutex> lck(camera_queue_mtx);
@@ -573,19 +594,64 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
 
   // Load the mask if we are using it, else it is empty
   // TODO: in the future we should get this from external pixel segmentation
+  cv::Mat mask0 = cv::Mat::zeros(cv_ptr0->image.rows, cv_ptr0->image.cols, CV_8UC1);
+  cv::Mat mask1 = cv::Mat::zeros(cv_ptr1->image.rows, cv_ptr1->image.cols, CV_8UC1);
   if (_app->get_params().use_mask) {
-    message.masks.push_back(_app->get_params().masks.at(cam_id0));
-    message.masks.push_back(_app->get_params().masks.at(cam_id1));
-  } else {
-    // message.masks.push_back(cv::Mat(cv_ptr0->image.rows, cv_ptr0->image.cols, CV_8UC1, cv::Scalar(255)));
-    message.masks.push_back(cv::Mat::zeros(cv_ptr0->image.rows, cv_ptr0->image.cols, CV_8UC1));
-    message.masks.push_back(cv::Mat::zeros(cv_ptr1->image.rows, cv_ptr1->image.cols, CV_8UC1));
+    cv::bitwise_or(mask0, _app->get_params().masks.at(cam_id0), mask0);
+    cv::bitwise_or(mask1, _app->get_params().masks.at(cam_id1), mask1);
   }
+  cv::bitwise_or(mask0, get_dynamic_mask(cam_id0, message.timestamp, cv_ptr0->image.rows, cv_ptr0->image.cols), mask0);
+  cv::bitwise_or(mask1, get_dynamic_mask(cam_id1, message.timestamp, cv_ptr1->image.rows, cv_ptr1->image.cols), mask1);
+  message.masks.push_back(mask0);
+  message.masks.push_back(mask1);
 
   // append it to our queue of images
   std::lock_guard<std::mutex> lck(camera_queue_mtx);
   camera_queue.push_back(message);
   std::sort(camera_queue.begin(), camera_queue.end());
+}
+
+void ROS1Visualizer::callback_dynamic_mask(const sensor_msgs::ImageConstPtr &msg, int cam_id) {
+
+  cv_bridge::CvImageConstPtr cv_ptr;
+  try {
+    cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
+  } catch (cv_bridge::Exception &e) {
+    PRINT_ERROR("dynamic mask cv_bridge exception: %s\n", e.what());
+    return;
+  }
+
+  if (cv_ptr->image.empty())
+    return;
+
+  std::lock_guard<std::mutex> lock(dynamic_mask_mtx);
+  dynamic_masks[cam_id] = cv_ptr->image.clone();
+  dynamic_mask_timestamps[cam_id] = msg->header.stamp.toSec();
+}
+
+cv::Mat ROS1Visualizer::get_dynamic_mask(int cam_id, double image_timestamp, int rows, int cols) {
+
+  cv::Mat empty_mask = cv::Mat::zeros(rows, cols, CV_8UC1);
+  if (!use_dynamic_mask)
+    return empty_mask;
+
+  std::lock_guard<std::mutex> lock(dynamic_mask_mtx);
+  auto mask_it = dynamic_masks.find(cam_id);
+  auto timestamp_it = dynamic_mask_timestamps.find(cam_id);
+  if (mask_it == dynamic_masks.end() || timestamp_it == dynamic_mask_timestamps.end())
+    return empty_mask;
+
+  const double mask_timestamp = timestamp_it->second;
+  const double age = image_timestamp - mask_timestamp;
+  if (age < -dynamic_mask_future_tolerance || age > dynamic_mask_timeout)
+    return empty_mask;
+
+  if (mask_it->second.rows != rows || mask_it->second.cols != cols) {
+    ROS_WARN_THROTTLE(5.0, "Ignoring dynamic mask for cam%d with size %dx%d; expected %dx%d", cam_id, mask_it->second.cols,
+                      mask_it->second.rows, cols, rows);
+    return empty_mask;
+  }
+  return mask_it->second;
 }
 
 void ROS1Visualizer::publish_state() {
