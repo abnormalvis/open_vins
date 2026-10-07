@@ -467,6 +467,19 @@ void TrackKLT::perform_detection_monocular(const std::vector<cv::Mat> &img0pyr, 
   // If we don't need any features, just return
   double min_feat_percent = 0.50;
   int num_featsneeded = num_features - (int)pts0.size();
+  if (num_featsneeded <= 0)
+    return;
+
+  if (feature_detector == "GFTT") {
+    std::vector<cv::Point2f> pts0_new;
+    cv::goodFeaturesToTrack(img0pyr.at(0), pts0_new, num_featsneeded, 0.01, min_px_dist, mask0_updated, 3, false, 0.04);
+    for (const auto &pt : pts0_new) {
+      pts0.emplace_back(pt, 7.0F);
+      ids0.push_back(++currid);
+    }
+    return;
+  }
+
   if (num_featsneeded < std::min(20, (int)(min_feat_percent * num_features)))
     return;
 

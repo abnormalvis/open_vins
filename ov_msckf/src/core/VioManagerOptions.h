@@ -423,6 +423,9 @@ struct VioManagerOptions {
   /// Fast extraction threshold
   int fast_threshold = 20;
 
+  /// Feature detector used for monocular KLT replenishment: FAST or GFTT
+  std::string feature_detector = "FAST";
+
   /// Number of grids we should split column-wise to do feature extraction in
   int grid_x = 5;
 
@@ -462,6 +465,11 @@ struct VioManagerOptions {
       parser->parse_config("multi_threading_subs", use_multi_threading_subs, false);
       parser->parse_config("num_pts", num_pts);
       parser->parse_config("fast_threshold", fast_threshold);
+      parser->parse_config("feature_detector", feature_detector);
+      if (feature_detector != "FAST" && feature_detector != "GFTT") {
+        printf(RED "VioManager(): invalid feature detector specified: %s (use FAST or GFTT)\n" RESET, feature_detector.c_str());
+        std::exit(EXIT_FAILURE);
+      }
       parser->parse_config("grid_x", grid_x);
       parser->parse_config("grid_y", grid_y);
       parser->parse_config("min_px_dist", min_px_dist);
@@ -493,6 +501,7 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - use multi-threading pubs: %d\n", use_multi_threading_pubs);
     PRINT_DEBUG("  - use multi-threading subs: %d\n", use_multi_threading_subs);
     PRINT_DEBUG("  - num_pts: %d\n", num_pts);
+    PRINT_DEBUG("  - feature detector: %s\n", feature_detector.c_str());
     PRINT_DEBUG("  - fast threshold: %d\n", fast_threshold);
     PRINT_DEBUG("  - grid X by Y: %d by %d\n", grid_x, grid_y);
     PRINT_DEBUG("  - min px dist: %d\n", min_px_dist);
