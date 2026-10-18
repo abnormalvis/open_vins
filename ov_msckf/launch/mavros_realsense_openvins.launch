@@ -1,0 +1,69 @@
+<launch>
+    <arg name="fcu_type" default="px4" />
+    <arg name="fcu_url" default="/dev/ttyS6:921600" />
+    <arg name="gcs_url" default="" />
+    <arg name="tgt_system" default="1" />
+    <arg name="tgt_component" default="1" />
+    <arg name="fcu_protocol" default="v2.0" />
+    <arg name="respawn_mavros" default="false" />
+
+    <arg name="serial_no" default="" />
+    <arg name="camera" default="camera" />
+    <arg name="infra_width" default="640" />
+    <arg name="infra_height" default="480" />
+    <arg name="infra_fps" default="30" />
+
+    <arg name="ov_config" default="rs_mono" />
+    <arg name="run_dynamic_mask" default="true" />
+    <arg name="openvins_odom_topic" default="/ov_msckf/odomimu" />
+    <arg name="mavros_pose_topic" default="/mavros/vision_pose/pose" />
+
+    <group if="$(eval arg('fcu_type') == 'apm')">
+        <include file="$(find mavros)/launch/apm.launch">
+            <arg name="fcu_url" value="$(arg fcu_url)" />
+            <arg name="gcs_url" value="$(arg gcs_url)" />
+            <arg name="tgt_system" value="$(arg tgt_system)" />
+            <arg name="tgt_component" value="$(arg tgt_component)" />
+            <arg name="fcu_protocol" value="$(arg fcu_protocol)" />
+            <arg name="respawn_mavros" value="$(arg respawn_mavros)" />
+        </include>
+    </group>
+
+    <group if="$(eval arg('fcu_type') == 'px4')">
+        <include file="$(find mavros)/launch/px4.launch">
+            <arg name="fcu_url" value="$(arg fcu_url)" />
+            <arg name="gcs_url" value="$(arg gcs_url)" />
+            <arg name="tgt_system" value="$(arg tgt_system)" />
+            <arg name="tgt_component" value="$(arg tgt_component)" />
+            <arg name="fcu_protocol" value="$(arg fcu_protocol)" />
+            <arg name="respawn_mavros" value="$(arg respawn_mavros)" />
+        </include>
+    </group>
+
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+        <arg name="serial_no" value="$(arg serial_no)" />
+        <arg name="camera" value="$(arg camera)" />
+        <arg name="enable_depth" value="false" />
+        <arg name="enable_color" value="false" />
+        <arg name="enable_infra" value="true" />
+        <arg name="enable_infra1" value="false" />
+        <arg name="enable_infra2" value="true" />
+        <arg name="infra_width" value="$(arg infra_width)" />
+        <arg name="infra_height" value="$(arg infra_height)" />
+        <arg name="infra_fps" value="$(arg infra_fps)" />
+        <arg name="enable_gyro" value="false" />
+        <arg name="enable_accel" value="false" />
+    </include>
+
+    <include file="$(find ov_msckf)/launch/subscribe.launch">
+        <arg name="config" value="$(arg ov_config)" />
+        <arg name="use_stereo" value="false" />
+        <arg name="max_cameras" value="1" />
+        <arg name="run_dynamic_mask" value="$(arg run_dynamic_mask)" />
+    </include>
+
+    <include file="$(find vision_to_mavros)/launch/openvins_to_mavros.launch">
+        <arg name="openvins_pose_topic" value="$(arg openvins_odom_topic)" />
+        <arg name="mavros_pose_topic" value="$(arg mavros_pose_topic)" />
+    </include>
+</launch>
