@@ -24,11 +24,16 @@
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
+#include "feat/LineFeature.h"
+#include "feat/LineFeatureDatabase.h"
+#include "line/LineDetector.h"
 #include "track/TrackAruco.h"
 #include "track/TrackDescriptor.h"
 #include "track/TrackKLT.h"
+#include "track/TrackLine.h"
 #include "track/TrackSIM.h"
 #include "types/Landmark.h"
+#include "types/LandmarkLine.h"
 #include "types/LandmarkRepresentation.h"
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
@@ -39,6 +44,8 @@
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
+#include "update/UpdaterLineMSCKF.h"
+#include "update/UpdaterLineSLAM.h"
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterZeroVelocity.h"
@@ -155,6 +162,26 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // Make the updater!
   updaterMSCKF = std::make_shared<UpdaterMSCKF>(params.msckf_options, params.featinit_options);
   updaterSLAM = std::make_shared<UpdaterSLAM>(params.slam_options, params.aruco_options, params.featinit_options);
+
+  // Initialize our line segment tracker and line updaters
+  if (params.use_lines) {
+
+    // Build the line extractor for the configured detector backend (FLD+LBD or FLD only)
+    ov_core::DetectorMode line_mode = (params.line_detector == "fld_lbd") ? ov_core::DetectorMode::FLD_LBD : ov_core::DetectorMode::FLD;
+    ov_core::LineDetectorOptions line_detector_options;
+    ov_core::TrackLine::Options line_track_options;
+    line_track_options.max_lines = params.line_max_lines;
+    line_track_options.min_line_length = params.line_min_length;
+    line_track_options.max_endpoint_motion = params.line_max_endpoint_motion;
+    line_track_options.max_angle_difference_deg = params.line_max_angle_difference_deg;
+    line_track_options.descriptor_ratio = params.line_descriptor_ratio;
+    trackLINES = std::make_shared<ov_core::TrackLine>(state->_cam_intrinsics_cameras, line_track_options,
+                                                       ov_core::LineDetectorFactory::make_extractor(line_mode, line_detector_options));
+
+    // Both updaters share the line measurement noise options
+    updaterLineMSCKF = std::make_shared<UpdaterLineMSCKF>(params.line_options);
+    updaterLineSLAM = std::make_shared<UpdaterLineSLAM>(params.line_options);
+  }
 
   // If we are using zero velocity updates, then create the updater
   if (params.try_zupt) {
@@ -286,6 +313,11 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   // NOTE: thus we just call the stereo tracking if we are doing binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
     trackARUCO->feed_new_camera(message);
+  }
+
+  // If the line tracker is available, also pass the new camera to it
+  if (is_initialized_vio && trackLINES != nullptr) {
+    trackLINES->feed_new_camera(message);
   }
   rT2 = boost::posix_time::microsec_clock::local_time();
 
@@ -549,6 +581,124 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   rT6 = boost::posix_time::microsec_clock::local_time();
 
   //===================================================================================
+  // Line features: MSCKF marginalization or persistent SLAM line landmarks
+  //===================================================================================
+
+  if (trackLINES != nullptr) {
+
+    // Get all line features lost in the newest frame, and those at the marg timestep
+    std::vector<std::shared_ptr<LineFeature>> lines_lost, lines_marg;
+    lines_lost = trackLINES->get_feature_database()->features_not_containing_newer(state->_timestamp, false, true);
+    if ((int)state->_clones_IMU.size() > state->_options.max_clone_size || (int)state->_clones_IMU.size() > 5) {
+      lines_marg = trackLINES->get_feature_database()->features_containing(state->margtimestep(), false, true);
+    }
+
+    // Remove any lost lines that were not observed by the current camera message
+    // (mirror the point logic: wait until the owning camera processes its newest image)
+    auto lit1 = lines_lost.begin();
+    while (lit1 != lines_lost.end()) {
+      bool found_current_message_camid = false;
+      for (const auto &camobspair : (*lit1)->observations) {
+        if (std::find(message.sensor_ids.begin(), message.sensor_ids.end(), (int)camobspair.first) != message.sensor_ids.end()) {
+          found_current_message_camid = true;
+          break;
+        }
+      }
+      if (found_current_message_camid) {
+        lit1++;
+      } else {
+        lit1 = lines_lost.erase(lit1);
+      }
+    }
+
+    // Also remove lines that are in both lost and marg
+    lit1 = lines_lost.begin();
+    while (lit1 != lines_lost.end()) {
+      if (std::find(lines_marg.begin(), lines_marg.end(), (*lit1)) != lines_marg.end()) {
+        lit1 = lines_lost.erase(lit1);
+      } else {
+        lit1++;
+      }
+    }
+
+    if (params.line_feat_rep == "msckf") {
+
+      // Concatenate our line arrays and pass them to the MSCKF line updater
+      std::vector<std::shared_ptr<LineFeature>> linesup = lines_lost;
+      linesup.insert(linesup.end(), lines_marg.begin(), lines_marg.end());
+      updaterLineMSCKF->update(state, linesup);
+      propagator->invalidate_cache();
+
+    } else if (params.line_feat_rep == "slam") {
+
+      // Find lines that have reached max track length, these can become SLAM lines
+      std::vector<std::shared_ptr<LineFeature>> lines_maxtracks, lines_slam;
+      auto lit2 = lines_marg.begin();
+      while (lit2 != lines_marg.end()) {
+        bool reached_max = false;
+        for (const auto &cams : (*lit2)->observations) {
+          if ((int)cams.second.size() > state->_options.max_clone_size) {
+            reached_max = true;
+            break;
+          }
+        }
+        if (reached_max) {
+          lines_maxtracks.push_back(*lit2);
+          lit2 = lines_marg.erase(lit2);
+        } else {
+          lit2++;
+        }
+      }
+
+      // Append new SLAM lines if we have room and have waited our delay amount
+      if ((int)state->_lines_SLAM.size() < state->_options.max_line_features && message.timestamp - startup_time >= params.dt_slam_delay) {
+        int amount_to_add = state->_options.max_line_features - (int)state->_lines_SLAM.size();
+        int valid_amount = (amount_to_add > (int)lines_maxtracks.size()) ? (int)lines_maxtracks.size() : amount_to_add;
+        if (valid_amount > 0) {
+          lines_slam.insert(lines_slam.end(), lines_maxtracks.end() - valid_amount, lines_maxtracks.end());
+          lines_maxtracks.erase(lines_maxtracks.end() - valid_amount, lines_maxtracks.end());
+        }
+      }
+
+      // Loop through current SLAM lines and grab their current tracks for this update
+      // If a SLAM line has lost tracking (or failed updates), mark it for marginalization
+      for (std::pair<const size_t, std::shared_ptr<ov_type::LandmarkLine>> &landmark : state->_lines_SLAM) {
+        std::shared_ptr<LineFeature> feat = trackLINES->get_feature_database()->get_feature(landmark.second->_featid);
+        if (feat != nullptr)
+          lines_slam.push_back(feat);
+        assert(landmark.second->_unique_camera_id != -1);
+        bool current_unique_cam =
+            std::find(message.sensor_ids.begin(), message.sensor_ids.end(), (int)landmark.second->_unique_camera_id) != message.sensor_ids.end();
+        if (feat == nullptr && current_unique_cam)
+          landmark.second->should_marg = true;
+        if (landmark.second->update_fail_count > 1)
+          landmark.second->should_marg = true;
+      }
+
+      // Marginalize out all old SLAM lines here
+      StateHelper::marginalize_slam_lines(state);
+
+      // Separate our SLAM lines into new ones and old ones
+      std::vector<std::shared_ptr<LineFeature>> lines_slam_DELAYED, lines_slam_UPDATE;
+      for (size_t i = 0; i < lines_slam.size(); i++) {
+        if (state->_lines_SLAM.find(lines_slam.at(i)->featid) != state->_lines_SLAM.end()) {
+          lines_slam_UPDATE.push_back(lines_slam.at(i));
+        } else {
+          lines_slam_DELAYED.push_back(lines_slam.at(i));
+        }
+      }
+
+      // Update existing SLAM lines and delayed-init the new ones
+      updaterLineSLAM->update(state, lines_slam_UPDATE);
+      propagator->invalidate_cache();
+      updaterLineSLAM->delayed_init(state, lines_slam_DELAYED);
+
+      // Perform anchor change before the anchor clone is marginalized
+      updaterLineSLAM->change_anchors(state);
+    }
+  }
+
+  //===================================================================================
   // Update our visualization feature set, and clean up the old features
   //===================================================================================
 
@@ -581,6 +731,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (trackARUCO != nullptr) {
     trackARUCO->get_feature_database()->cleanup();
   }
+  if (trackLINES != nullptr) {
+    trackLINES->get_feature_database()->cleanup();
+  }
 
   // First do anchor change if we are about to lose an anchor pose
   updaterSLAM->change_anchors(state);
@@ -590,6 +743,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     trackFEATS->get_feature_database()->cleanup_measurements(state->margtimestep());
     if (trackARUCO != nullptr) {
       trackARUCO->get_feature_database()->cleanup_measurements(state->margtimestep());
+    }
+    if (trackLINES != nullptr) {
+      trackLINES->get_feature_database()->cleanup_measurements(state->margtimestep());
     }
   }
 

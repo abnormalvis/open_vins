@@ -40,6 +40,7 @@
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <std_msgs/Float64.h>
 #include <tf/transform_broadcaster.h>
+#include <visualization_msgs/Marker.h>
 
 #include <atomic>
 #include <fstream>
@@ -127,6 +128,9 @@ protected:
   /// Publish current features
   void publish_features();
 
+  /// Publish current 3D SLAM line landmarks
+  void publish_lines();
+
   /// Publish groundtruth (if we have it)
   void publish_groundtruth();
 
@@ -149,6 +153,7 @@ protected:
   image_transport::Publisher it_pub_tracks, it_pub_loop_img_depth, it_pub_loop_img_depth_color;
   ros::Publisher pub_poseimu, pub_odomimu, pub_pathimu;
   ros::Publisher pub_points_msckf, pub_points_slam, pub_points_aruco, pub_points_sim;
+  ros::Publisher pub_lines;
   ros::Publisher pub_loop_pose, pub_loop_point, pub_loop_extrinsic, pub_loop_intrinsics;
   std::shared_ptr<tf::TransformBroadcaster> mTfBr;
 

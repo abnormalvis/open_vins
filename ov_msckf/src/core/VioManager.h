@@ -38,6 +38,7 @@ struct ImuData;
 struct CameraData;
 class TrackBase;
 class FeatureInitializer;
+class TrackLine;
 } // namespace ov_core
 namespace ov_init {
 class InertialInitializer;
@@ -49,6 +50,8 @@ class State;
 class StateHelper;
 class UpdaterMSCKF;
 class UpdaterSLAM;
+class UpdaterLineMSCKF;
+class UpdaterLineSLAM;
 class UpdaterZeroVelocity;
 class Propagator;
 
@@ -118,6 +121,9 @@ public:
 
   /// Returns 3d ARUCO features in the global frame
   std::vector<Eigen::Vector3d> get_features_ARUCO();
+
+  /// Returns 3d SLAM line landmarks as endpoint pairs (global frame)
+  std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> get_lines_SLAM();
 
   /// Returns 3d features used in the last update in global frame
   std::vector<Eigen::Vector3d> get_good_features_MSCKF() { return good_features_MSCKF; }
@@ -191,6 +197,9 @@ protected:
   /// Our aruoc tracker
   std::shared_ptr<ov_core::TrackBase> trackARUCO;
 
+  /// Our line segment tracker
+  std::shared_ptr<ov_core::TrackLine> trackLINES;
+
   /// State initializer
   std::shared_ptr<ov_init::InertialInitializer> initializer;
 
@@ -202,6 +211,12 @@ protected:
 
   /// Our SLAM/ARUCO feature updater
   std::shared_ptr<UpdaterSLAM> updaterSLAM;
+
+  /// Our line feature updater (MSCKF marginalization of lines)
+  std::shared_ptr<UpdaterLineMSCKF> updaterLineMSCKF;
+
+  /// Our line feature updater (persistent SLAM line landmarks)
+  std::shared_ptr<UpdaterLineSLAM> updaterLineSLAM;
 
   /// Our zero velocity tracker
   std::shared_ptr<UpdaterZeroVelocity> updaterZUPT;

@@ -23,6 +23,7 @@
 #define OV_MSCKF_STATE_OPTIONS_H
 
 #include "types/LandmarkRepresentation.h"
+#include "types/LineRepresentation.h"
 #include "utils/opencv_yaml_parse.h"
 #include "utils/print.h"
 #include "utils/sensor_data.h"
@@ -79,6 +80,9 @@ struct StateOptions {
   /// Max number of estimated ARUCO features
   int max_aruco_features = 1024;
 
+  /// Max number of estimated SLAM line features
+  int max_line_features = 50;
+
   /// Number of distinct cameras that we will observe features in
   int num_cameras = 1;
 
@@ -90,6 +94,9 @@ struct StateOptions {
 
   /// What representation our features are in (aruco tag features)
   ov_type::LandmarkRepresentation::Representation feat_rep_aruco = ov_type::LandmarkRepresentation::Representation::GLOBAL_3D;
+
+  /// What representation our line features are in (global or anchored plucker)
+  ov_type::LineRepresentation::Representation line_feat_representation = ov_type::LineRepresentation::Representation::GLOBAL_PLUCKER;
 
   /// Nice print function of what parameters we have loaded
   void print(const std::shared_ptr<ov_core::YamlParser> &parser = nullptr) {
@@ -125,6 +132,7 @@ struct StateOptions {
       parser->parse_config("max_msckf_in_update", max_msckf_in_update);
       parser->parse_config("num_aruco", max_aruco_features);
       parser->parse_config("max_cameras", num_cameras);
+      parser->parse_config("max_line_features", max_line_features);
 
       // Feature representations
       std::string rep1 = ov_type::LandmarkRepresentation::as_string(feat_rep_msckf);
@@ -136,6 +144,9 @@ struct StateOptions {
       std::string rep3 = ov_type::LandmarkRepresentation::as_string(feat_rep_aruco);
       parser->parse_config("feat_rep_aruco", rep3);
       feat_rep_aruco = ov_type::LandmarkRepresentation::from_string(rep3);
+      std::string rep_line = ov_type::LineRepresentation::as_string(line_feat_representation);
+      parser->parse_config("line_feat_representation", rep_line);
+      line_feat_representation = ov_type::LineRepresentation::from_string(rep_line);
 
       // IMU model
       std::string imu_model_str = "kalibr";
@@ -168,10 +179,12 @@ struct StateOptions {
     PRINT_DEBUG("  - max_slam_in_update: %d\n", max_slam_in_update);
     PRINT_DEBUG("  - max_msckf_in_update: %d\n", max_msckf_in_update);
     PRINT_DEBUG("  - max_aruco: %d\n", max_aruco_features);
+    PRINT_DEBUG("  - max_line_features: %d\n", max_line_features);
     PRINT_DEBUG("  - max_cameras: %d\n", num_cameras);
     PRINT_DEBUG("  - feat_rep_msckf: %s\n", ov_type::LandmarkRepresentation::as_string(feat_rep_msckf).c_str());
     PRINT_DEBUG("  - feat_rep_slam: %s\n", ov_type::LandmarkRepresentation::as_string(feat_rep_slam).c_str());
     PRINT_DEBUG("  - feat_rep_aruco: %s\n", ov_type::LandmarkRepresentation::as_string(feat_rep_aruco).c_str());
+    PRINT_DEBUG("  - line_feat_representation: %s\n", ov_type::LineRepresentation::as_string(line_feat_representation).c_str());
   }
 };
 

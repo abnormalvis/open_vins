@@ -32,6 +32,7 @@
 #include "cam/CamBase.h"
 #include "types/IMU.h"
 #include "types/Landmark.h"
+#include "types/LandmarkLine.h"
 #include "types/PoseJPL.h"
 #include "types/Type.h"
 #include "types/Vec.h"
@@ -151,6 +152,9 @@ public:
 
   /// Our current set of SLAM features (3d positions)
   std::unordered_map<size_t, std::shared_ptr<ov_type::Landmark>> _features_SLAM;
+
+  /// Our current set of SLAM line features (Plucker lines)
+  std::unordered_map<size_t, std::shared_ptr<ov_type::LandmarkLine>> _lines_SLAM;
 
   /// Time offset base IMU to camera (t_imu = t_cam + t_off)
   std::shared_ptr<ov_type::Vec> _calib_dt_CAMtoIMU;

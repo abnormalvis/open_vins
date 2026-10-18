@@ -8,15 +8,16 @@ use_stereo: true # if we have more than 1 camera, if we should try to track ster
 max_cameras: 2 # how many cameras we have 1 = mono, 2 = stereo, >2 = binocular (all mono tracking)
 
 calib_cam_extrinsics: true # if the transform between camera and IMU should be optimized R_ItoC, p_CinI
-calib_cam_intrinsics: true # if camera intrinsics should be optimized (focal, center, distortion)
-calib_cam_timeoffset: true # if timeoffset between camera and IMU should be optimized
-calib_imu_intrinsics: false # if imu intrinsics should be calibrated (rotation and skew-scale matrix)
-calib_imu_g_sensitivity: false # if gyroscope gravity sensitivity (Tg) should be calibrated
+calib_cam_intrinsics: true # keep calibrated intrinsics fixed during extrinsic estimation
+calib_cam_timeoffset: true # keep the calibrated camera-IMU time offset fixed
+calib_imu_intrinsics: false # keep calibrated IMU intrinsics fixed
+calib_imu_g_sensitivity: false # keep calibrated gyro gravity sensitivity fixed
 
 max_clones: 11 # how many clones in the sliding window
 max_slam: 30 # number of features in our state vector
 max_slam_in_update: 25 # update can be split into sequential updates of batches, how many in a batch
 max_msckf_in_update: 40 # how many MSCKF features to use in the update
+max_line_features: 50 # number of persistent SLAM line landmarks in our state vector
 dt_slam_delay: 1 # delay before initializing (helps with stability from bad initialization...)
 
 gravity_mag: 9.81 # magnitude of gravity in this location
@@ -24,10 +25,11 @@ gravity_mag: 9.81 # magnitude of gravity in this location
 feat_rep_msckf: "GLOBAL_3D"
 feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
 feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
+line_feat_representation: "GLOBAL_PLUCKER" # GLOBAL_PLUCKER or ANCHORED_PLUCKER
 
 # zero velocity update parameters we can use
 # we support either IMU-based or disparity detection.
-try_zupt: false
+try_zupt: false # if we should try to detect zero-velocity updates
 zupt_chi2_multipler: 0 # set to 0 for only disp-based
 zupt_max_velocity: 0.1
 zupt_noise_multiplier: 10
@@ -78,6 +80,7 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # our front-end feature tracking parameters
 # we have a KLT and descriptor based (KLT is better implemented...)
 use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+feature_detector: "FAST" # FAST or GFTT for replenishing monocular point tracks
 num_pts: 200 # number of points (per camera) we will extract and try to track
 fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
 feature_detector: "FAST" # FAST or GFTT
@@ -96,6 +99,18 @@ use_aruco: false
 num_aruco: 1024
 downsize_aruco: true
 
+# line segment tracker for the system
+# line_feat_rep selects the EKF strategy: msckf (marginalized lines) or slam (persistent line landmarks)
+# line_feat_representation selects the 3D parameterization: GLOBAL_PLUCKER or ANCHORED_PLUCKER
+use_lines: false
+line_detector: "fld_lbd" # fld_lbd (FLD segments + LBD descriptors) or fld (FLD segments only)
+line_feat_rep: "msckf" # msckf or slam
+line_max_lines: 150 # max number of lines extracted per camera
+line_min_length: 25.0 # min line length (pixels) to keep during tracking
+line_max_endpoint_motion: 80.0 # max endpoint motion (pixels) between frames for geometric matching
+line_max_angle_difference_deg: 25.0 # max angle difference (deg) between frames for geometric matching
+line_descriptor_ratio: 0.8 # descriptor distance ratio threshold for LBD matching
+
 # ==================================================================
 # ==================================================================
 
@@ -106,9 +121,14 @@ up_slam_sigma_px: 1
 up_slam_chi2_multipler: 1
 up_aruco_sigma_px: 1
 up_aruco_chi2_multipler: 1
+up_line_sigma_px: 1
+up_line_chi2_multipler: 1
 
 # masks for our images
 use_mask: false
+use_dynamic_mask: false
+dynamic_mask_timeout: 0.25
+dynamic_mask_future_tolerance: 0.05
 
 # asynchronous dynamic-object mask
 use_dynamic_mask: false

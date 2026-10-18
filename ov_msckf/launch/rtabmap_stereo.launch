@@ -1,0 +1,105 @@
+<launch>
+
+  <!-- ================================================================================
+    Loose-coupled loop closure (RTAB-Map) on top of OpenVINS stereo VIO.
+
+    Data flow:
+      realsense D435i (infra1/infra2)  ->  OpenVINS  ->  /ov_msckf/odomimu (external odom)
+      realsense D435i (infra1/infra2)  ->  rtabmap   ->  appearance loop closure + pose-graph
+      /ov_msckf/odomimu                ->  rtabmap   (external odometry input)
+
+    Loop-closure corrections live only in rtabmap's "map" frame (map -> global TF).
+    OpenVINS /ov_msckf/odomimu is never modified (no feedback into the EKF).
+  ================================================================================ -->
+
+  <arg name="camera"       default="camera"/>
+  <arg name="rviz"         default="false"/>
+  <arg name="rtabmapviz"   default="false"/>
+  <arg name="database_path" default="~/.ros/rtabmap.db"/>
+
+  <!-- ===================================================== -->
+  <!-- Realsense stereo camera (infra1/infra2 only)         -->
+  <!-- ===================================================== -->
+  <!-- <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera"           value="$(arg camera)"/>
+    <arg name="enable_infra1"    value="true"/>
+    <arg name="enable_infra2"    value="true"/>
+    <arg name="enable_depth"     value="false"/>
+    <arg name="enable_color"     value="false"/>
+    <arg name="enable_gyro"      value="true"/>
+    <arg name="enable_accel"     value="true"/>
+    <arg name="enable_sync"      value="true"/>
+    <arg name="unite_imu_method" value="linear_interpolation"/>
+    <arg name="publish_tf"       value="true"/>
+  </include> -->
+
+  <!-- ===================================================== -->
+  <!-- OpenVINS stereo VIO                                  -->
+  <!-- ===================================================== -->
+  <include file="$(find ov_msckf)/launch/subscribe.launch">
+    <arg name="config"      value="rs_stereo"/>
+    <arg name="max_cameras" value="2"/>
+  </include>
+
+  <!-- ===================================================== -->
+  <!-- RTAB-Map: stereo appearance loop closure + external  -->
+  <!-- OpenVINS odometry (loose coupling, no EKF feedback)  -->
+  <!-- ===================================================== -->
+  <node pkg="rtabmap_slam" type="rtabmap" name="rtabmap" output="screen" args="--delete_db_on_start">
+
+    <!-- input subscriptions: stereo pair + external odometry topic -->
+    <param name="subscribe_stereo"     type="bool"   value="true"/>
+    <param name="subscribe_depth"      type="bool"   value="false"/>
+    <param name="subscribe_rgb"        type="bool"   value="false"/>
+    <param name="subscribe_rgbd"       type="bool"   value="false"/>
+    <param name="subscribe_odom_info"  type="bool"   value="false"/>  <!-- false => use nav_msgs/Odometry "odom" topic -->
+    <param name="approx_sync"          type="bool"   value="true"/>
+
+    <!-- frames: odometry lives in "global", sensor frame is OpenVINS "imu" -->
+    <param name="frame_id"       type="string" value="imu"/>
+    <param name="odom_frame_id"  type="string" value="global"/>
+    <param name="map_frame_id"   type="string" value="map"/>
+    <param name="publish_tf"     type="bool"   value="true"/>
+    <param name="database_path"  type="string" value="$(arg database_path)"/>
+
+    <!-- stereo inputs -->
+    <remap from="left/image_rect"   to="/$(arg camera)/infra1/image_rect_raw"/>
+    <remap from="right/image_rect"  to="/$(arg camera)/infra2/image_rect_raw"/>
+    <remap from="left/camera_info"  to="/$(arg camera)/infra1/camera_info"/>
+    <remap from="right/camera_info" to="/$(arg camera)/infra2/camera_info"/>
+
+    <!-- external OpenVINS odometry -->
+    <remap from="odom" to="/ov_msckf/odomimu"/>
+
+    <!-- mapping / appearance-loop-closure parameters (enum values per rtabmap docs) -->
+    <param name="Mem/IncrementalMemory" type="string" value="true"/>
+    <param name="Rtabmap/TimeThr"       type="string" value="700"/>
+    <param name="Vis/EstimationType"    type="string" value="1"/>  <!-- 0=3D->3D, 1=3D->2D (PnP) -->
+    <param name="Vis/MaxDepth"          type="string" value="0"/>
+    <param name="Vis/CorType"           type="string" value="0"/>  <!-- 0=Features Matching, 1=Optical Flow -->
+    <param name="Reg/Strategy"          type="string" value="0"/>  <!-- 0=Vis, 1=Icp, 2=VisIcp -->
+    <param name="Odom/Strategy"         type="string" value="0"/>  <!-- 0=Frame-to-Map, 1=Frame-to-Frame -->
+
+  </node>
+
+  <!-- ===================================================== -->
+  <!-- Optional RTAB-Map visualization                      -->
+  <!-- ===================================================== -->
+  <node if="$(arg rtabmapviz)" pkg="rtabmap_viz" type="rtabmap_viz" name="rtabmap_viz" output="screen">
+    <param name="subscribe_stereo"     type="bool"   value="true"/>
+    <param name="subscribe_odom_info"  type="bool"   value="false"/>
+    <param name="frame_id"             type="string" value="imu"/>
+    <param name="odom_frame_id"        type="string" value="global"/>
+    <remap from="left/image_rect"   to="/$(arg camera)/infra1/image_rect_raw"/>
+    <remap from="right/image_rect"  to="/$(arg camera)/infra2/image_rect_raw"/>
+    <remap from="left/camera_info"  to="/$(arg camera)/infra1/camera_info"/>
+    <remap from="right/camera_info" to="/$(arg camera)/infra2/camera_info"/>
+    <remap from="odom"              to="/ov_msckf/odomimu"/>
+  </node>
+
+  <!-- ===================================================== -->
+  <!-- Optional RViz (OpenVINS display)                     -->
+  <!-- ===================================================== -->
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz" args="-d $(find ov_msckf)/launch/display.rviz"/>
+
+</launch>

@@ -63,6 +63,8 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   PRINT_DEBUG("Publishing: %s\n", pub_points_aruco.getTopic().c_str());
   pub_points_sim = nh->advertise<sensor_msgs::PointCloud2>("points_sim", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_points_sim.getTopic().c_str());
+  pub_lines = nh->advertise<visualization_msgs::Marker>("lines", 2);
+  PRINT_DEBUG("Publishing: %s\n", pub_lines.getTopic().c_str());
 
   // Our tracking image
   it_pub_tracks = it.advertise("trackhist", 2);
@@ -245,6 +247,9 @@ void ROS1Visualizer::visualize() {
 
   // publish points
   publish_features();
+
+  // publish line landmarks
+  publish_lines();
 
   // Publish gt if we have it
   publish_groundtruth();
@@ -772,6 +777,47 @@ void ROS1Visualizer::publish_features() {
   std::vector<Eigen::Vector3d> feats_sim = _sim->get_map_vec();
   sensor_msgs::PointCloud2 cloud_SIM = ROSVisualizerHelper::get_ros_pointcloud(feats_sim);
   pub_points_sim.publish(cloud_SIM);
+}
+
+void ROS1Visualizer::publish_lines() {
+
+  // Check if we have subscribers
+  if (pub_lines.getNumSubscribers() == 0)
+    return;
+
+  // Get our SLAM line landmarks as endpoint pairs in the global frame
+  std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> lines = _app->get_lines_SLAM();
+
+  // Construct the LINE_LIST marker
+  visualization_msgs::Marker marker;
+  marker.header.frame_id = "global";
+  marker.header.stamp = ros::Time::now();
+  marker.ns = "ov_msckf_lines";
+  marker.id = 0;
+  marker.type = visualization_msgs::Marker::LINE_LIST;
+  marker.action = visualization_msgs::Marker::ADD;
+  marker.pose.orientation.w = 1.0;
+  marker.scale.x = 0.02;
+  marker.color.r = 0.0f;
+  marker.color.g = 0.7f;
+  marker.color.b = 1.0f;
+  marker.color.a = 0.8f;
+
+  for (const auto &line : lines) {
+    geometry_msgs::Point p0, p1;
+    p0.x = line.first(0);
+    p0.y = line.first(1);
+    p0.z = line.first(2);
+    p1.x = line.second(0);
+    p1.y = line.second(1);
+    p1.z = line.second(2);
+    marker.points.push_back(p0);
+    marker.points.push_back(p1);
+  }
+
+  // An empty marker deletes any previously published lines
+  marker.action = marker.points.empty() ? visualization_msgs::Marker::DELETE : visualization_msgs::Marker::ADD;
+  pub_lines.publish(marker);
 }
 
 void ROS1Visualizer::publish_groundtruth() {

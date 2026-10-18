@@ -229,6 +229,12 @@ public:
    */
   static void marginalize_slam(std::shared_ptr<State> state);
 
+  /**
+   * @brief Marginalize bad SLAM line features
+   * @param state Pointer to state
+   */
+  static void marginalize_slam_lines(std::shared_ptr<State> state);
+
 private:
   /**
    * All function in this class should be static.

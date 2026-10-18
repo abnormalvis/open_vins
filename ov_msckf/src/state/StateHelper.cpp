@@ -643,3 +643,18 @@ void StateHelper::marginalize_slam(std::shared_ptr<State> state) {
     }
   }
 }
+
+void StateHelper::marginalize_slam_lines(std::shared_ptr<State> state) {
+  // Remove SLAM line features that have their marginalization flag set
+  int ct_marginalized = 0;
+  auto it0 = state->_lines_SLAM.begin();
+  while (it0 != state->_lines_SLAM.end()) {
+    if ((*it0).second->should_marg) {
+      StateHelper::marginalize(state, (*it0).second);
+      it0 = state->_lines_SLAM.erase(it0);
+      ct_marginalized++;
+    } else {
+      it0++;
+    }
+  }
+}

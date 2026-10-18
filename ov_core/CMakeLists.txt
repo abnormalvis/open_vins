@@ -3,10 +3,12 @@ project(ov_core)
 
 # Include libraries (if we don't have opencv 4, then fallback to opencv 3)
 # The OpenCV version needs to match the one used by cv_bridge otherwise you will get a segmentation fault!
+# The line detector backend needs the contrib modules line_descriptor (LBD) and ximgproc (FLD);
+# require them here so we fail at configure time instead of linking a partially-built detector.
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV 3 QUIET)
-if (NOT OpenCV_FOUND)
-    find_package(OpenCV 4 REQUIRED)
+find_package(OpenCV 3 QUIET COMPONENTS line_descriptor ximgproc)
+if (NOT OpenCV_FOUND OR NOT OpenCV_line_descriptor_FOUND OR NOT OpenCV_ximgproc_FOUND)
+    find_package(OpenCV 4 REQUIRED COMPONENTS line_descriptor ximgproc)
 endif ()
 find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time)
 message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION})

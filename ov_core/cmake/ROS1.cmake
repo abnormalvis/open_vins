@@ -48,11 +48,17 @@ list(APPEND LIBRARY_SOURCES
         src/track/TrackAruco.cpp
         src/track/TrackDescriptor.cpp
         src/track/TrackKLT.cpp
+        src/track/TrackLine.cpp
         src/track/TrackSIM.cpp
         src/types/Landmark.cpp
+        src/types/LandmarkLine.cpp
+        src/line/LineMath.cpp
+        src/line/LineDetector.cpp
         src/feat/Feature.cpp
         src/feat/FeatureDatabase.cpp
         src/feat/FeatureInitializer.cpp
+        src/feat/LineFeature.cpp
+        src/feat/LineFeatureDatabase.cpp
         src/utils/print.cpp
 )
 file(GLOB_RECURSE LIBRARY_HEADERS "src/*.h")
@@ -82,6 +88,30 @@ if (catkin_FOUND AND ENABLE_ROS)
             LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
             RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
     )
+
+        add_executable(test_line_tracking src/test_line_tracking.cpp)
+        target_link_libraries(test_line_tracking ov_core_lib ${thirdparty_libraries})
+        install(TARGETS test_line_tracking
+                        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+                        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+                        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+        )
+
+        add_executable(test_line_math src/test_line_math.cpp)
+        target_link_libraries(test_line_math ov_core_lib ${thirdparty_libraries})
+        install(TARGETS test_line_math
+                        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+                        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+                        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+        )
+
+        add_executable(test_line_detector src/test_line_detector.cpp)
+        target_link_libraries(test_line_detector ov_core_lib ${thirdparty_libraries})
+        install(TARGETS test_line_detector
+                        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+                        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+                        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+        )
 
 endif ()
 

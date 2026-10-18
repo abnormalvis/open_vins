@@ -147,6 +147,9 @@ struct VioManagerOptions {
   /// Update options for zero velocity (chi2 multiplier)
   UpdaterOptions zupt_options;
 
+  /// Update options for line features (pixel noise and chi2 multiplier)
+  UpdaterOptions line_options;
+
   /**
    * @brief This function will load print out all noise parameters loaded.
    * This allows for visual checking that everything was loaded properly from ROS/CMD parsers.
@@ -169,9 +172,12 @@ struct VioManagerOptions {
       parser->parse_config("up_slam_chi2_multipler", slam_options.chi2_multipler);
       parser->parse_config("up_aruco_sigma_px", aruco_options.sigma_pix);
       parser->parse_config("up_aruco_chi2_multipler", aruco_options.chi2_multipler);
+      parser->parse_config("up_line_sigma_px", line_options.sigma_pix);
+      parser->parse_config("up_line_chi2_multipler", line_options.chi2_multipler);
       msckf_options.sigma_pix_sq = std::pow(msckf_options.sigma_pix, 2);
       slam_options.sigma_pix_sq = std::pow(slam_options.sigma_pix, 2);
       aruco_options.sigma_pix_sq = std::pow(aruco_options.sigma_pix, 2);
+      line_options.sigma_pix_sq = std::pow(line_options.sigma_pix, 2);
       parser->parse_config("zupt_chi2_multipler", zupt_options.chi2_multipler);
     }
     PRINT_DEBUG("  Updater MSCKF Feats:\n");
@@ -182,6 +188,8 @@ struct VioManagerOptions {
     aruco_options.print();
     PRINT_DEBUG("  Updater ZUPT:\n");
     zupt_options.print();
+    PRINT_DEBUG("  Updater LINE Feats:\n");
+    line_options.print();
   }
 
   // STATE DEFAULTS ==========================
@@ -447,6 +455,30 @@ struct VioManagerOptions {
   /// Parameters used by our feature initialize / triangulator
   ov_core::FeatureInitializerOptions featinit_options;
 
+  /// If we should track and estimate 3D line features (PL-VIO geometric constraints)
+  bool use_lines = false;
+
+  /// Line detector backend: "fld_lbd" (FLD + LBD descriptor) or "fld" (FLD + endpoint optical flow)
+  std::string line_detector = "fld_lbd";
+
+  /// How line features are integrated: "msckf" (marginalized) or "slam" (persistent landmarks)
+  std::string line_feat_rep = "msckf";
+
+  /// Max number of lines we extract per image
+  int line_max_lines = 150;
+
+  /// Minimum line length (px) to accept a detected line
+  double line_min_length = 25.0;
+
+  /// Max endpoint motion (px) allowed for geometric line matching
+  double line_max_endpoint_motion = 80.0;
+
+  /// Max angle difference (deg) allowed for line matching
+  double line_max_angle_difference_deg = 25.0;
+
+  /// Descriptor ratio test threshold for LBD line matching
+  double line_descriptor_ratio = 0.8;
+
   /**
    * @brief This function will load print out all parameters related to visual tracking
    * This allows for visual checking that everything was loaded properly from ROS/CMD parsers.
@@ -490,6 +522,24 @@ struct VioManagerOptions {
       }
       parser->parse_config("knn_ratio", knn_ratio);
       parser->parse_config("track_frequency", track_frequency);
+
+      // Line feature options
+      parser->parse_config("use_lines", use_lines);
+      parser->parse_config("line_detector", line_detector);
+      if (line_detector != "fld_lbd" && line_detector != "fld") {
+        printf(RED "VioManager(): invalid line detector specified: %s (use fld_lbd or fld)\n" RESET, line_detector.c_str());
+        std::exit(EXIT_FAILURE);
+      }
+      parser->parse_config("line_feat_rep", line_feat_rep);
+      if (line_feat_rep != "msckf" && line_feat_rep != "slam") {
+        printf(RED "VioManager(): invalid line feature representation specified: %s (use msckf or slam)\n" RESET, line_feat_rep.c_str());
+        std::exit(EXIT_FAILURE);
+      }
+      parser->parse_config("line_max_lines", line_max_lines);
+      parser->parse_config("line_min_length", line_min_length);
+      parser->parse_config("line_max_endpoint_motion", line_max_endpoint_motion);
+      parser->parse_config("line_max_angle_difference_deg", line_max_angle_difference_deg);
+      parser->parse_config("line_descriptor_ratio", line_descriptor_ratio);
     }
     PRINT_DEBUG("FEATURE TRACKING PARAMETERS:\n");
     PRINT_DEBUG("  - use_stereo: %d\n", use_stereo);
@@ -508,6 +558,14 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - hist method: %d\n", (int)histogram_method);
     PRINT_DEBUG("  - knn ratio: %.3f\n", knn_ratio);
     PRINT_DEBUG("  - track frequency: %.1f\n", track_frequency);
+    PRINT_DEBUG("  - use_lines: %d\n", use_lines);
+    PRINT_DEBUG("  - line_detector: %s\n", line_detector.c_str());
+    PRINT_DEBUG("  - line_feat_rep: %s\n", line_feat_rep.c_str());
+    PRINT_DEBUG("  - line_max_lines: %d\n", line_max_lines);
+    PRINT_DEBUG("  - line_min_length: %.1f\n", line_min_length);
+    PRINT_DEBUG("  - line_max_endpoint_motion: %.1f\n", line_max_endpoint_motion);
+    PRINT_DEBUG("  - line_max_angle_difference_deg: %.1f\n", line_max_angle_difference_deg);
+    PRINT_DEBUG("  - line_descriptor_ratio: %.2f\n", line_descriptor_ratio);
     featinit_options.print(parser);
   }
 

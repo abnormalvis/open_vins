@@ -24,6 +24,9 @@
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
+#include "line/LineMath.h"
+#include "track/TrackLine.h"
+#include "types/LandmarkLine.h"
 #include "types/LandmarkRepresentation.h"
 #include "utils/print.h"
 
@@ -410,6 +413,18 @@ cv::Mat VioManager::get_historical_viz_image() {
     // trackARUCO->display_active(img_history, 0, 255, 255, 255, 255, 255, overlay);
   }
 
+  // Draw the current tracked line segments on top of the history image (camera 0 only,
+  // matching the point feature history visualization)
+  if (trackLINES != nullptr && !img_history.empty()) {
+    auto last_lines = trackLINES->get_last_lines();
+    auto cam0_lines = last_lines.find(0);
+    if (cam0_lines != last_lines.end()) {
+      for (const auto &seg : cam0_lines->second) {
+        cv::line(img_history, cv::Point2f(seg[0], seg[1]), cv::Point2f(seg[2], seg[3]), cv::Scalar(0, 165, 255), 2);
+      }
+    }
+  }
+
   // Finally return the image
   return img_history;
 }
@@ -458,4 +473,40 @@ std::vector<Eigen::Vector3d> VioManager::get_features_ARUCO() {
     }
   }
   return aruco_feats;
+}
+
+std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> VioManager::get_lines_SLAM() {
+  std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> lines;
+  for (auto &f : state->_lines_SLAM) {
+
+    // Start from the stored Plücker line
+    Eigen::Vector3d n_G = f.second->n(false);
+    Eigen::Vector3d d_G = f.second->d(false);
+
+    // If anchored, transform the line from the anchor frame into the global frame
+    if (f.second->_feat_representation == ov_type::LineRepresentation::Representation::ANCHORED_PLUCKER) {
+      assert(f.second->_anchor_cam_id != -1);
+      Eigen::Matrix<double, 3, 3> R_ItoC = state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->Rot();
+      Eigen::Matrix<double, 3, 1> p_IinC = state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->pos();
+      Eigen::Matrix<double, 3, 3> R_GtoI = state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->Rot();
+      Eigen::Matrix<double, 3, 1> p_IinG = state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->pos();
+      // anchor -> global rotation and translation
+      Eigen::Matrix<double, 3, 3> R_A = R_GtoI.transpose() * R_ItoC.transpose();
+      Eigen::Matrix<double, 3, 1> p_AinG = p_IinG - R_A * p_IinC;
+      Eigen::Vector3d n_A = f.second->n(false);
+      Eigen::Vector3d d_A = f.second->d(false);
+      line::transform_plucker(R_A, p_AinG, n_A, d_A, n_G, d_G);
+    }
+
+    // Sample a finite segment (fixed length) along the infinite line for visualization,
+    // centered at the closest point to the global origin
+    double d2 = d_G.squaredNorm();
+    if (d2 < 1e-12)
+      continue;
+    Eigen::Vector3d closest = d_G.cross(n_G) / d2;
+    Eigen::Vector3d dir = d_G / std::sqrt(d2);
+    const double len = 1.0;
+    lines.emplace_back(closest - len * dir, closest + len * dir);
+  }
+  return lines;
 }
