@@ -4,10 +4,12 @@
     <arg name="verbosity"   default="INFO" /> <!-- ALL, DEBUG, INFO, WARNING, ERROR, SILENT -->
     <arg name="config"      default="rs_mono" /> <!-- euroc_mav, tum_vi, rpng_aruco -->
     <arg name="config_path" default="$(find ov_msckf)/../config/$(arg config)/estimator_config.yaml" />
+    <arg name="run_dynamic_mask" default="false" />
+    <arg name="dynamic_mask_config" default="$(find ov_dynamic_mask)/config/traditional_dynamic_mask.yaml" />
 
     <!-- mono or stereo and what ros bag to play -->
     <arg name="max_cameras" default="1" />
-    <arg name="use_stereo"  default="true" />
+    <arg name="use_stereo"  default="false" />
     <arg name="bag_start"   default="0" /> <!-- v1-2: 0, mh1: 40, mh2: 35, mh3: 17.5, mh4-5: 15 -->
     <arg name="bag_rate"    default="1" />
     <arg name="dataset"     default="V1_01_easy" /> <!-- V1_01_easy, V1_02_medium, V2_02_medium -->
@@ -25,6 +27,13 @@
     <!-- if we should viz the groundtruth -->
     <arg name="dolivetraj"  default="false" />
     <arg name="path_gt"     default="$(find ov_data)/$(arg config)/$(arg dataset).txt" />
+
+    <!-- Optional dynamic-mask producer; configure its image/IMU topics for the active sensor setup. -->
+    <group if="$(arg run_dynamic_mask)">
+        <include file="$(find ov_dynamic_mask)/launch/traditional_dynamic_mask.launch">
+            <arg name="config" value="$(arg dynamic_mask_config)" />
+        </include>
+    </group>
 
     <!-- MASTER NODE! -->
 <!--    <node name="ov_msckf" pkg="ov_msckf" type="run_subscribe_msckf" output="screen" clear_params="true" required="true" launch-prefix="gdb -ex run &#45;&#45;args">-->
