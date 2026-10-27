@@ -17,6 +17,7 @@ max_clones: 11 # how many clones in the sliding window
 max_slam: 50 # number of features in our state vector
 max_slam_in_update: 25 # update can be split into sequential updates of batches, how many in a batch
 max_msckf_in_update: 40 # how many MSCKF features to use in the update
+max_line_features: 50 # number of persistent SLAM line landmarks in our state vector
 dt_slam_delay: 1 # delay before initializing (helps with stability from bad initialization...)
 
 gravity_mag: 9.81 # magnitude of gravity in this location
@@ -24,6 +25,7 @@ gravity_mag: 9.81 # magnitude of gravity in this location
 feat_rep_msckf: "GLOBAL_3D"
 feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
 feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
+line_feat_representation: "GLOBAL_PLUCKER" # GLOBAL_PLUCKER or ANCHORED_PLUCKER
 
 # zero velocity update parameters we can use
 # we support either IMU-based or disparity detection.
@@ -96,6 +98,16 @@ use_aruco: false
 num_aruco: 1024
 downsize_aruco: true
 
+# line segment tracker; disabled for this monocular setup
+use_lines: false
+line_detector: "fld_lbd"
+line_feat_rep: "msckf"
+line_max_lines: 150
+line_min_length: 25.0
+line_max_endpoint_motion: 80.0
+line_max_angle_difference_deg: 25.0
+line_descriptor_ratio: 0.8
+
 # ==================================================================
 # ==================================================================
 
@@ -106,6 +118,8 @@ up_slam_sigma_px: 1
 up_slam_chi2_multipler: 1
 up_aruco_sigma_px: 1
 up_aruco_chi2_multipler: 1
+up_line_sigma_px: 1
+up_line_chi2_multipler: 1
 
 # masks for our images
 use_mask: false
