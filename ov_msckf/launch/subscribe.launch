@@ -2,10 +2,11 @@
 
     <!-- what config we are going to run (should match folder name) -->
     <arg name="verbosity"   default="INFO" /> <!-- ALL, DEBUG, INFO, WARNING, ERROR, SILENT -->
-    <arg name="config"      default="rs_mono" /> <!-- euroc_mav, tum_vi, rpng_aruco -->
+    <arg name="config"      default="rpng_sim" /> <!-- euroc_mav, tum_vi, rpng_aruco -->
     <arg name="config_path" default="$(find ov_msckf)/../config/$(arg config)/estimator_config.yaml" />
+    <arg name="topic_imu" default="/imu0" />
+    <arg name="topic_camera0" default="/cam0/image_raw" />
     <arg name="run_dynamic_mask" default="false" />
-    <arg name="dynamic_mask_config" default="$(find ov_dynamic_mask)/config/traditional_dynamic_mask.yaml" />
 
     <!-- mono or stereo and what ros bag to play -->
     <arg name="max_cameras" default="1" />
@@ -29,6 +30,7 @@
 
     <!-- Optional dynamic-mask producer; configure its image/IMU topics for the active sensor setup. -->
     <group if="$(arg run_dynamic_mask)">
+        <arg name="dynamic_mask_config" default="$(find ov_dynamic_mask)/config/traditional_dynamic_mask.yaml" />
         <include file="$(find ov_dynamic_mask)/launch/traditional_dynamic_mask.launch">
             <arg name="config" value="$(arg dynamic_mask_config)" />
         </include>
@@ -41,6 +43,8 @@
         <!-- master configuration object -->
         <param name="verbosity"              type="string" value="$(arg verbosity)" />
         <param name="config_path"            type="string" value="$(arg config_path)" />
+        <param name="topic_imu"               type="string" value="$(arg topic_imu)" />
+        <param name="topic_camera0"           type="string" value="$(arg topic_camera0)" />
 
         <!-- world/filter parameters -->
         <param name="use_stereo"             type="bool"   value="$(arg use_stereo)" />
