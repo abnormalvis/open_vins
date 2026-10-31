@@ -29,14 +29,14 @@ if ! rospack find rosmon_core >/dev/null 2>&1; then
     exit 1
 fi
 
-for package in mavros realsense2_camera ov_msckf vision_to_mavros; do
+for package in mavros realsense2_camera ov_msckf vins_mavros_bridge; do
     if ! rospack find "${package}" >/dev/null 2>&1; then
         printf 'ROS package not found: %s\n' "${package}" >&2
         exit 1
     fi
 done
 
-if ! python3 -c "from roslib.packages import find_node; import sys; sys.exit(0 if find_node('vision_to_mavros', 'openvins_to_mavros_node') else 1)"; then
+if ! python3 -c "from roslib.packages import find_node; import sys; sys.exit(0 if find_node('vins_mavros_bridge', 'vins_mavros_bridge_node') else 1)"; then
     printf 'Bridge executable not found. Build ${BRIDGE_WS} and source its devel/setup.bash.\n' >&2
     exit 1
 fi

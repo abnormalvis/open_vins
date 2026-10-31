@@ -62,8 +62,15 @@
         <arg name="run_dynamic_mask" value="$(arg run_dynamic_mask)" />
     </include>
 
-    <include file="$(find vision_to_mavros)/launch/openvins_to_mavros.launch">
-        <arg name="openvins_pose_topic" value="$(arg openvins_odom_topic)" />
-        <arg name="mavros_pose_topic" value="$(arg mavros_pose_topic)" />
-    </include>
+    <!-- External vision into MAVROS. This used to be vision_to_mavros, which
+         forwarded /ov_msckf/odomimu verbatim: OpenVINS publishes twist.linear
+         in the body frame, so the pose was right but the velocity reference
+         frame was not. vins_mavros_bridge forwards the same pose after
+         normalizing the twist to the world frame, and adds the staleness,
+         jump and finiteness checks that were missing. -->
+    <node pkg="vins_mavros_bridge" type="vins_mavros_bridge_node" name="vins_mavros_bridge" output="screen">
+        <rosparam command="load" file="$(find vins_mavros_bridge)/config/openvins.yaml" />
+        <param name="input_topic" value="$(arg openvins_odom_topic)" />
+        <param name="vision_pose_topic" value="$(arg mavros_pose_topic)" />
+    </node>
 </launch>
